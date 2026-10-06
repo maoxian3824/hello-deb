@@ -1,0 +1,3 @@
+#!/bin/sh
+# hello-deb — minimal demo program for the hello-deb package
+echo "hello"
