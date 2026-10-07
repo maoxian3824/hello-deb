@@ -71,19 +71,20 @@ hello-deb   # 输出: hello
 ## 从源码重新构建
 
 ```bash
-sh build.sh          # 构建 amd64 包
-sh build-arm64.sh    # 构建 arm64 包
+sh build.sh           # 构建 amd64 包（默认架构）
+sh build.sh arm64     # 构建 arm64 包
 ```
 
 产物分别为 `hello-deb_1.0.0_amd64.deb` 与 `hello-deb_1.0.0_arm64.deb`。
 
 ## 包结构
 
+构建脚本会按架构生成临时目录 `hello-deb-<arch>/`（arm64 同理）再打包，结构如下：
+
 ```
-hello-deb/
+hello-deb-amd64/
 ├── DEBIAN/
-│   ├── control      # 包元信息，声明 Architecture: amd64
-│   └── postinst     # 安装后脚本
+│   └── control      # 包元信息，声明 Architecture: amd64
 └── usr/
     └── bin/
         └── hello-deb  # 实际安装到 /usr/bin/hello-deb
