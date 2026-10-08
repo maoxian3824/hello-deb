@@ -1,0 +1,107 @@
+name: Build
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 构建并验证 deb 包
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装打包工具
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev file
+
+      - name: 构建 amd64 包
+        run: sh build.sh
+
+      - name: 构建 arm64 包
+        run: sh build-arm64.sh
+
+      - name: 列出构建产物
+        run: ls -lh *.deb
+
+      - name: 校验包结构 — amd64
+        run: |
+          echo "=== 元信息 ==="
+          dpkg-deb -I hello-deb_1.0.0_amd64.deb
+          echo "=== 文件清单 ==="
+          dpkg-deb -c hello-deb_1.0.0_amd64.deb
+
+          echo "=== 断言 Architecture 为 amd64 ==="
+          ARCH=$(dpkg-deb -f hello-deb_1.0.0_amd64.deb Architecture)
+          echo "实际: $ARCH"
+          [ "$ARCH" = "amd64" ] || { echo "FAILED: 架构应为 amd64"; exit 1; }
+
+          echo "=== 断言包名为 hello-deb ==="
+          PKG=$(dpkg-deb -f hello-deb_1.0.0_amd64.deb Package)
+          [ "$PKG" = "hello-deb" ] || { echo "FAILED: 包名错误"; exit 1; }
+
+      - name: 校验包结构 — arm64
+        run: |
+          echo "=== 元信息 ==="
+          dpkg-deb -I hello-deb_1.0.0_arm64.deb
+
+          echo "=== 断言 Architecture 为 arm64 ==="
+          ARCH=$(dpkg-deb -f hello-deb_1.0.0_arm64.deb Architecture)
+          echo "实际: $ARCH"
+          [ "$ARCH" = "arm64" ] || { echo "FAILED: 架构应为 arm64"; exit 1; }
+
+      - name: 校验文件权限
+        run: |
+          for pkg in hello-deb_1.0.0_amd64.deb hello-deb_1.0.0_arm64.deb; do
+            echo "=== $pkg ==="
+            # 可执行文件必须是 755
+            PERM=$(dpkg-deb -c "$pkg" | grep 'usr/bin/hello-deb' | awk '{print $1}')
+            echo "usr/bin/hello-deb 权限: $PERM"
+            case "$PERM" in
+              -rwxr-xr-x) echo "权限正确" ;;
+              *) echo "FAILED: 权限应为 -rwxr-xr-x"; exit 1 ;;
+            esac
+          done
+
+      - name: 校验包内不含多余文件
+        run: |
+          for pkg in hello-deb_1.0.0_amd64.deb hello-deb_1.0.0_arm64.deb; do
+            COUNT=$(dpkg-deb -c "$pkg" | grep -cE '^-')
+            echo "$pkg 含 $COUNT 个文件"
+            [ "$COUNT" -eq 1 ] || { echo "FAILED: 应只含 1 个文件"; exit 1; }
+          done
+
+      - name: 安装并运行验证
+        run: |
+          echo "=== 安装 amd64 包 ==="
+          sudo dpkg -i hello-deb_1.0.0_amd64.deb
+
+          echo "=== 运行 hello-deb ==="
+          OUTPUT=$(hello-deb)
+          echo "输出: $OUTPUT"
+          [ "$OUTPUT" = "hello" ] || { echo "FAILED: 输出应为 hello"; exit 1; }
+
+          echo "=== 确认安装位置 ==="
+          which hello-deb
+
+          echo "=== 卸载 ==="
+          sudo dpkg -r hello-deb
+
+      - name: 生成校验和
+        run: sha256sum *.deb | tee SHA256SUMS.txt
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v5
+        with:
+          name: deb-packages
+          path: |
+            *.deb
+            SHA256SUMS.txt
+          retention-days: 7
